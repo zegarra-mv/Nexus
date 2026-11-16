@@ -5,7 +5,9 @@ import path from 'node:path';
 import { openDatabase, type NexusDb } from '../db/connection.js';
 import { migrateDatabase } from '../db/migrations.js';
 import { createProject } from './project.js';
+import { createDecision } from './decision.js';
 import {
+  analyzeImpact,
   checkConflicts,
   createConflict,
   findOpenConflicts,
@@ -121,5 +123,27 @@ describe('checkConflicts with an isolated project', () => {
 
     const fromIso = checkConflicts(db, [iso]);
     expect(fromIso.conflicts).toHaveLength(0);
+  });
+});
+
+describe('analyzeImpact with an isolated project', () => {
+  it('never reports an isolated project as affected, nor others from it', () => {
+    const shared = 'deploy pipeline docker staging server';
+    const a = createProject(db, { name: 'a', path: path.join(dir, 'a'), tags: ['web'] }, 'cli').id;
+    const b = createProject(db, { name: 'b', path: path.join(dir, 'b'), tags: ['web'] }, 'cli').id;
+    const iso = createProject(
+      db,
+      { name: 'iso', path: path.join(dir, 'iso'), tags: ['web', 'separado'] },
+      'cli',
+    ).id;
+    for (const pid of [b, iso, a]) {
+      createDecision(db, { projectId: pid, kind: 'architecture', summary: shared }, 'cli');
+    }
+
+    const fromA = analyzeImpact(db, a, shared);
+    expect(fromA.affectedProjects.map((p) => p.projectName)).toEqual(['b']);
+
+    const fromIso = analyzeImpact(db, iso, shared);
+    expect(fromIso.affectedProjects).toHaveLength(0);
   });
 });

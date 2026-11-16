@@ -6,6 +6,7 @@ import {
   findProjectByPath,
   createProject,
   removeProject,
+  findRelatedProjectIds,
 } from './project.js';
 import type { NexusDb } from '../db/connection.js';
 
@@ -97,5 +98,34 @@ describe('ProjectRepository', () => {
     it('returns false for non-existent path', () => {
       expect(removeProject(db, '/nonexistent')).toBe(false);
     });
+  });
+});
+
+describe('findRelatedProjectIds with isolated projects', () => {
+  let db: NexusDb;
+  beforeEach(() => {
+    db = openTestDb();
+  });
+  afterEach(() => {
+    db.close();
+  });
+
+  it('never relates an isolated project to anything, in either direction', () => {
+    const parent = createProject(db, { name: 'Parent', path: '/p', tags: ['negocio'] });
+    const child = createProject(db, { name: 'Child', path: '/c', parentId: parent.id, tags: ['negocio'] });
+    const iso = createProject(db, {
+      name: 'Iso',
+      path: '/i',
+      parentId: parent.id,
+      tags: ['negocio', 'separado'],
+    });
+    const iso2 = createProject(db, { name: 'Iso2', path: '/j', tags: ['separado'] });
+
+    // Parent, sibling via parent, and shared tag would all relate Iso otherwise.
+    expect(findRelatedProjectIds(db, parent.id)).toEqual(new Set([child.id]));
+    expect(findRelatedProjectIds(db, child.id)).toEqual(new Set([parent.id]));
+    expect(findRelatedProjectIds(db, iso.id)).toEqual(new Set());
+    // Two isolated projects must not look related through the shared tag.
+    expect(findRelatedProjectIds(db, iso2.id)).toEqual(new Set());
   });
 });

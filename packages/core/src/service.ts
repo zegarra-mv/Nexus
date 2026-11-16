@@ -85,7 +85,12 @@ import { runDoctorFix, type DoctorFixResult } from './diagnostics/doctor-fix.js'
 import { syncClaudeMd } from './sync/claude-md-sync.js';
 import type { PortfolioEntry } from './sync/claude-md-sync.js';
 import { selectRelevantProjects } from './sync/relevance.js';
-import { visibleProjects, isolatedProjectIds, filterForViewer } from './sync/isolation.js';
+import {
+  visibleProjects,
+  isolatedProjectIds,
+  filterForViewer,
+  crossesIsolation,
+} from './sync/isolation.js';
 import type { ProjectCandidate } from './sync/relevance.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -706,13 +711,16 @@ export class NexusService {
   getDependencyGraph(rootProjectId: string, depth = 2): Array<{ from: string; to: string }> {
     const edges: Array<{ from: string; to: string }> = [];
     const visited = new Set<string>();
+    const all = findAllProjects(this.db);
+    const isolated = isolatedProjectIds(all);
 
     const traverse = (projectId: string, remainingDepth: number) => {
       if (visited.has(projectId) || remainingDepth === 0) return;
       visited.add(projectId);
 
-      const children = findAllProjects(this.db).filter(
-        (p) => p.parentId === projectId,
+      // A parent/child link across an isolated project is never followed.
+      const children = all.filter(
+        (p) => p.parentId === projectId && !crossesIsolation([projectId, p.id], isolated),
       );
       for (const child of children) {
         edges.push({ from: projectId, to: child.id });
