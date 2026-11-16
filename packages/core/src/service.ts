@@ -85,6 +85,7 @@ import { runDoctorFix, type DoctorFixResult } from './diagnostics/doctor-fix.js'
 import { syncClaudeMd } from './sync/claude-md-sync.js';
 import type { PortfolioEntry } from './sync/claude-md-sync.js';
 import { selectRelevantProjects } from './sync/relevance.js';
+import { visibleProjects } from './sync/isolation.js';
 import type { ProjectCandidate } from './sync/relevance.js';
 import fs from 'node:fs';
 
@@ -421,7 +422,9 @@ export class NexusService {
     if (!project) return false;
     if (!fs.existsSync(project.path)) return false;
 
-    const allProjects = findAllProjects(this.db);
+    // Isolated projects (tagged "separado"/"separate"/"isolated") stay out of
+    // every other project's portfolio and related notes, and see only themselves.
+    const allProjects = visibleProjects(project.id, findAllProjects(this.db));
     const decisions = this.getDecisionsForProject(project.id);
     const notes = this.getNotesForProject(project.id);
     const { conflicts } = this.checkConflicts([project.id]);
