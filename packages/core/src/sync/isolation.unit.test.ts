@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { isIsolated, visibleProjects } from './isolation.js';
+import {
+  isIsolated,
+  visibleProjects,
+  isolatedProjectIds,
+  crossesIsolation,
+  filterForViewer,
+} from './isolation.js';
 
 const projects = [
   { id: 'a', name: 'Alpha', tags: ['negocio'] },
@@ -36,5 +42,38 @@ describe('visibleProjects', () => {
   it('leaves the portfolio unchanged when nothing is isolated', () => {
     const open = projects.filter((p) => p.id !== 'n');
     expect(visibleProjects('b', open)).toEqual(open);
+  });
+});
+
+describe('crossesIsolation', () => {
+  const iso = new Set(['n']);
+  it('flags a record linking an isolated project with another', () => {
+    expect(crossesIsolation(['a', 'n'], iso)).toBe(true);
+  });
+  it('allows records within one project or between open projects', () => {
+    expect(crossesIsolation(['n'], iso)).toBe(false);
+    expect(crossesIsolation(['n', 'n'], iso)).toBe(false);
+    expect(crossesIsolation(['a', 'b'], iso)).toBe(false);
+  });
+});
+
+describe('filterForViewer', () => {
+  const iso = isolatedProjectIds(projects);
+  const rows = [
+    { id: 1, projectId: 'a' },
+    { id: 2, projectId: 'n' },
+    { id: 3, projectId: undefined },
+    { id: 4, projectId: 'b' },
+  ];
+  const ids = (rs: Array<{ id: number }>) => rs.map((r) => r.id);
+
+  it('hides isolated records from an open project', () => {
+    expect(ids(filterForViewer(rows, 'a', iso))).toEqual([1, 3, 4]);
+  });
+  it('hides isolated records when the viewer is in no project', () => {
+    expect(ids(filterForViewer(rows, null, iso))).toEqual([1, 3, 4]);
+  });
+  it('shows an isolated viewer only its own and global records', () => {
+    expect(ids(filterForViewer(rows, 'n', iso))).toEqual([2, 3]);
   });
 });

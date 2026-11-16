@@ -41,6 +41,7 @@ import {
   planIncrementalExtraction,
   isSimilarDecision,
   isSimilarPattern,
+  isIsolated,
 } from '@nexus/core';
 import type { BudgetCheckResult, Conflict, LlmUsageInfo } from '@nexus/core';
 
@@ -362,9 +363,22 @@ export function hookCommand(): Command {
             return;
           }
 
+          // An isolated project is never analysed against the portfolio, and
+          // no other project's analysis sees it: its decisions must not reach
+          // the same LLM call as anyone else's.
+          if (isIsolated(project.tags)) {
+            if (!opts.dryRun) {
+              svc.emitPipelineEvent(project.id, 'pipeline.portfolio.skip', {
+                reason: 'Project is isolated',
+              });
+            }
+            return;
+          }
           const allProjects = svc.listProjects();
           const { conflicts } = svc.checkConflicts([project.id]);
-          const otherProjects = allProjects.filter((p) => p.id !== project.id);
+          const otherProjects = allProjects.filter(
+            (p) => p.id !== project.id && !isIsolated(p.tags),
+          );
 
           const focusProject = {
             id: project.id,

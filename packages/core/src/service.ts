@@ -85,9 +85,10 @@ import { runDoctorFix, type DoctorFixResult } from './diagnostics/doctor-fix.js'
 import { syncClaudeMd } from './sync/claude-md-sync.js';
 import type { PortfolioEntry } from './sync/claude-md-sync.js';
 import { selectRelevantProjects } from './sync/relevance.js';
-import { visibleProjects } from './sync/isolation.js';
+import { visibleProjects, isolatedProjectIds, filterForViewer } from './sync/isolation.js';
 import type { ProjectCandidate } from './sync/relevance.js';
 import fs from 'node:fs';
+import path from 'node:path';
 
 export type { AuditQueryOptions, AuditCountByDay, AuditCountByOperation };
 
@@ -101,6 +102,13 @@ export interface QueryOptions {
   projectId?: string;
   kinds?: Array<'decision' | 'pattern' | 'preference'>;
   limit?: number;
+  /**
+   * The project the asking agent works in (null: none registered). When set,
+   * isolated projects are enforced: an isolated viewer sees only its own
+   * records, any other viewer never sees an isolated project's records.
+   * Leave undefined for the unfiltered admin view (dashboard).
+   */
+  viewerProjectId?: string | null;
 }
 
 export interface QueryResult {
@@ -140,6 +148,21 @@ export class NexusService {
 
   getProjectByPath(projectPath: string): Project | undefined {
     return findProjectByPath(this.db, projectPath);
+  }
+
+  /**
+   * The registered project that contains `dir` (the directory itself or its
+   * nearest registered ancestor), or null. Used to tell queries who is asking.
+   */
+  resolveViewerProjectId(dir: string): string | null {
+    let current = path.resolve(dir);
+    for (;;) {
+      const project = findProjectByPath(this.db, current);
+      if (project) return project.id;
+      const parent = path.dirname(current);
+      if (parent === current) return null;
+      current = parent;
+    }
   }
 
   getProjectById(id: string): Project | undefined {
@@ -393,19 +416,34 @@ export class NexusService {
     const kinds = opts.kinds ?? ['decision', 'pattern', 'preference'];
     const limit = opts.limit ?? 10;
 
+    // Isolation applies only when the caller says who is asking (agents);
+    // undefined is the unfiltered admin view. Filter before the limit so the
+    // viewer still gets `limit` results when isolated ones are dropped.
+    const viewer = opts.viewerProjectId;
+    const isolated =
+      viewer === undefined ? null : isolatedProjectIds(findAllProjects(this.db));
+    const scope = <T extends { projectId?: string | null | undefined }>(rows: T[]): T[] =>
+      (isolated && viewer !== undefined ? filterForViewer(rows, viewer, isolated) : rows).slice(
+        0,
+        limit,
+      );
+
     const decisions = kinds.includes('decision')
-      ? searchDecisions(this.db, opts.query, opts.projectId).slice(0, limit)
+      ? scope(searchDecisions(this.db, opts.query, opts.projectId))
       : [];
 
     const patterns = kinds.includes('pattern')
-      ? searchPatterns(this.db, opts.query, opts.projectId).slice(0, limit)
+      ? scope(searchPatterns(this.db, opts.query, opts.projectId))
       : [];
 
     const preferences = kinds.includes('preference')
-      ? listPreferences(this.db, opts.projectId).filter(
-          (p) =>
-            p.key.includes(opts.query) || p.value.toLowerCase().includes(opts.query.toLowerCase()),
-        ).slice(0, limit)
+      ? scope(
+          listPreferences(this.db, opts.projectId).filter(
+            (p) =>
+              p.key.includes(opts.query) ||
+              p.value.toLowerCase().includes(opts.query.toLowerCase()),
+          ),
+        )
       : [];
 
     return { decisions, patterns, preferences };

@@ -6,6 +6,7 @@ import { openDatabase, type NexusDb } from '../db/connection.js';
 import { migrateDatabase } from '../db/migrations.js';
 import { createProject } from './project.js';
 import {
+  checkConflicts,
   createConflict,
   findOpenConflicts,
   findOpenConflictsForProject,
@@ -101,5 +102,24 @@ describe('retireOpenAdvisories', () => {
       .prepare("SELECT count(*) n FROM audit_log WHERE operation = 'advisory.retire'")
       .get() as { n: number };
     expect(audit.n).toBe(1);
+  });
+});
+
+describe('checkConflicts with an isolated project', () => {
+  it('never reports a conflict that links an isolated project with another one', () => {
+    const iso = createProject(
+      db,
+      { name: 'separate-co', path: path.join(dir, 'iso'), tags: ['separado'] },
+      'cli',
+    ).id;
+    const other = createProject(db, { name: 'other', path: path.join(dir, 'other') }, 'cli').id;
+    createConflict(db, [iso, other], 'crosses the wall', 'cli', 'conflict', 'high');
+    createConflict(db, [projectId, other], 'ordinary clash', 'cli', 'conflict', 'high');
+
+    const fromOther = checkConflicts(db, [other]);
+    expect(fromOther.conflicts.map((c) => c.description)).toEqual(['ordinary clash']);
+
+    const fromIso = checkConflicts(db, [iso]);
+    expect(fromIso.conflicts).toHaveLength(0);
   });
 });
