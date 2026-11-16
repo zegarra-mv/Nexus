@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { NexusDb } from '../db/connection.js';
 import type { Project } from '../types/index.js';
 import { auditLog } from './audit.js';
+import { isIsolated, isolatedProjectIds } from '../sync/isolation.js';
 
 /** Normalize paths to forward slashes for consistent cross-platform matching. */
 export function normalizePath(p: string): string {
@@ -147,6 +148,12 @@ export function findRelatedProjectIds(db: NexusDb, projectId: string): Set<strin
   const project = findProjectById(db, projectId);
   if (!project) return new Set();
 
+  // An isolated project relates to nothing, and nothing relates to it. This
+  // also stops two isolated projects from looking related through the very
+  // isolation tag they share.
+  if (isIsolated(project.tags)) return new Set();
+  const isolated = isolatedProjectIds(findAllProjects(db));
+
   const related = new Set<string>();
 
   // Parent
@@ -178,5 +185,6 @@ export function findRelatedProjectIds(db: NexusDb, projectId: string): Set<strin
     }
   }
 
+  for (const id of isolated) related.delete(id);
   return related;
 }

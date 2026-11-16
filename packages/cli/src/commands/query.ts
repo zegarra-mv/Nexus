@@ -53,6 +53,8 @@ export function queryCommand(): Command {
             ...(projectId ? { projectId } : {}),
             kinds,
             limit: parseInt(opts.limit, 10),
+            // Agents run this from inside a project; isolated projects stay apart.
+            viewerProjectId: svc.resolveViewerProjectId(process.cwd()),
           });
 
           if (opts.json) {

@@ -7,6 +7,7 @@ import { findProjectById, findAllProjects, findRelatedProjectIds } from './proje
 import { findNotesByProject } from './note.js';
 import { findPatternsByProject } from './pattern.js';
 import { keywordJaccard, extractKeywords as extractSimilarityKeywords } from '../utils/similarity.js';
+import { isolatedProjectIds, crossesIsolation } from '../sync/isolation.js';
 
 interface ConflictRow {
   id: string;
@@ -129,7 +130,12 @@ export function checkConflicts(
   projectIds: string[],
   topic?: string,
 ): ConflictCheck {
-  const existing = findOpenConflicts(db, projectIds);
+  // An isolated project relates only to itself: never report a conflict or a
+  // potential conflict that links it with another project, whoever asks.
+  const isolated = isolatedProjectIds(findAllProjects(db));
+  const existing = findOpenConflicts(db, projectIds).filter(
+    (c) => !crossesIsolation(c.projectIds, isolated),
+  );
   const conflicts = existing.filter((c) => c.tier === 'conflict');
   const advisories = existing.filter((c) => c.tier === 'advisory');
 
@@ -141,7 +147,7 @@ export function checkConflicts(
     for (const pid of projectIds) {
       const related = findRelatedProjectIds(db, pid);
       for (const rid of related) {
-        if (projectIds.includes(rid)) {
+        if (projectIds.includes(rid) && !crossesIsolation([pid, rid], isolated)) {
           // Canonical key so we don't duplicate pairs
           const key = pid < rid ? `${pid}|${rid}` : `${rid}|${pid}`;
           relatedPairs.add(key);

@@ -111,6 +111,9 @@ server.tool(
         ...(projectId ? { projectId } : {}),
         ...(kinds ? { kinds } : {}),
         limit,
+        // Claude Code starts this server in the session's working directory,
+        // which tells us the asking project; isolated projects stay apart.
+        viewerProjectId: svc.resolveViewerProjectId(process.cwd()),
       }),
     );
 
@@ -251,7 +254,9 @@ server.tool(
           projectId = project.id;
         }
 
-        const ownPatterns = svc.query({ query, ...(projectId ? { projectId } : {}), kinds: ['pattern'], limit: 20 }).patterns;
+        // The asking project: the one named, else the session's directory.
+        const viewerProjectId = projectId ?? svc.resolveViewerProjectId(process.cwd());
+        const ownPatterns = svc.query({ query, ...(projectId ? { projectId } : {}), kinds: ['pattern'], limit: 20, viewerProjectId }).patterns;
 
         const crossLines: string[] = [];
         if (project) {
@@ -260,7 +265,7 @@ server.tool(
             (p) => p.id !== project!.id && (p.parentId === project!.id || project!.parentId === p.id),
           );
           for (const rel of related.slice(0, 3)) {
-            const relPatterns = svc.query({ query, projectId: rel.id, kinds: ['pattern'], limit: 5 }).patterns;
+            const relPatterns = svc.query({ query, projectId: rel.id, kinds: ['pattern'], limit: 5, viewerProjectId }).patterns;
             for (const p of relPatterns.slice(0, 2)) {
               crossLines.push(`- **${p.name}** [from: ${rel.name}] (×${p.frequency}): ${p.description}`);
             }
